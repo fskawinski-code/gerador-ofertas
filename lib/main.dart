@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 void main() => runApp(const MeuApp());
 
@@ -53,17 +52,30 @@ class _TelaInicialState extends State<TelaInicial> {
 
   // ===== Recebe link compartilhado (nativo, sem plugin) =====
   void _iniciarShareIntent() {
+    // 1. Escuta links que o Android ENVIA (app já aberto ou recém aberto)
+    _shareChannel.setMethodCallHandler((call) async {
+      if (call.method == 'linkRecebido') {
+        final texto = call.arguments as String?;
+        _preencherLink(texto);
+      }
+    });
+
+    // 2. Fallback: busca link inicial (caso o Android não tenha empurrado ainda)
     _buscarLinkCompartilhado();
   }
 
   Future<void> _buscarLinkCompartilhado() async {
     try {
       final texto = await _shareChannel.invokeMethod<String>('getSharedLink');
-      if (texto != null && texto.isNotEmpty) {
-        setState(() => _linkCtrl.text = _extrairLink(texto));
-        _msg("Link recebido! Agora preencha o valor 💰");
-      }
+      _preencherLink(texto);
     } catch (_) {}
+  }
+
+  void _preencherLink(String? texto) {
+    if (texto != null && texto.isNotEmpty) {
+      setState(() => _linkCtrl.text = _extrairLink(texto));
+      _msg("Link recebido! Agora preencha o valor 💰");
+    }
   }
 
   // Extrai a primeira URL de um texto qualquer
