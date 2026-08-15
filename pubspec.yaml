@@ -14,3 +14,10 @@ dependencies:
 
 flutter:
   uses-material-design: true
+  
+dependencies:
+  flutter:
+    sdk: flutter
+  shared_preferences: ^2.3.0
+  receive_sharing_intent: ^1.8.0
+
