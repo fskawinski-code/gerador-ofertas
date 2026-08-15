@@ -40,10 +40,150 @@ class _TelaInicialState extends State<TelaInicial> {
     "⚡ PROMOÇÃO RELÂMPAGO ⚡\n\n{link}\n\nAproveite antes que acabe!",
   ];
 
+  int _templateSelecionado = 0;
+
   @override
   void initState() {
     super.initState();
     _carregar();
   }
 
-  
+  Future<void> _carregar() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _loja = prefs.getString('loja') ?? "Shopee";
+      _templateSelecionado = prefs.getInt('template') ?? 0;
+    });
+  }
+
+  Future<void> _salvar() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('loja', _loja);
+    await prefs.setInt('template', _templateSelecionado);
+  }
+
+  String _gerarTexto() {
+    final template = _templates[_templateSelecionado];
+    return template
+        .replaceAll("{loja}", _loja)
+        .replaceAll("{emoji}", _emojis[_loja] ?? "")
+        .replaceAll("{link}", _linkCtrl.text.trim());
+  }
+
+  void _gerar() {
+    setState(() {
+      _textoCtrl.text = _gerarTexto();
+    });
+  }
+
+  void _copiar() {
+    Clipboard.setData(ClipboardData(text: _textoCtrl.text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Texto copiado! ✅")),
+    );
+  }
+
+  Future<void> _compartilharWhatsApp() async {
+    final texto = Uri.encodeComponent(_textoCtrl.text);
+    final url = Uri.parse("https://wa.me/?text=$texto");
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text("Gerador de Ofertas"),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            DropdownButtonFormField<String>(
+              value: _loja,
+              decoration: const InputDecoration(
+                labelText: "Loja",
+                border: OutlineInputBorder(),
+              ),
+              items: _emojis.keys
+                  .map((l) => DropdownMenuItem(
+                        value: l,
+                        child: Text("${_emojis[l]} $l"),
+                      ))
+                  .toList(),
+              onChanged: (v) {
+                setState(() => _loja = v!);
+                _salvar();
+              },
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _linkCtrl,
+              decoration: const InputDecoration(
+                labelText: "Link do produto",
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<int>(
+              value: _templateSelecionado,
+              decoration: const InputDecoration(
+                labelText: "Modelo de texto",
+                border: OutlineInputBorder(),
+              ),
+              items: List.generate(
+                _templates.length,
+                (i) => DropdownMenuItem(
+                  value: i,
+                  child: Text("Modelo ${i + 1}"),
+                ),
+              ),
+              onChanged: (v) {
+                setState(() => _templateSelecionado = v!);
+                _salvar();
+              },
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _gerar,
+              icon: const Icon(Icons.auto_awesome),
+              label: const Text("Gerar Oferta"),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _textoCtrl,
+              maxLines: 8,
+              decoration: const InputDecoration(
+                labelText: "Texto gerado",
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _copiar,
+                    icon: const Icon(Icons.copy),
+                    label: const Text("Copiar"),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _compartilharWhatsApp,
+                    icon: const Icon(Icons.share),
+                    label: const Text("WhatsApp"),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
