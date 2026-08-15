@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() => runApp(const MeuApp());
@@ -29,15 +28,16 @@ class TelaInicial extends StatefulWidget {
 
 class _TelaInicialState extends State<TelaInicial> {
   final _linkCtrl = TextEditingController();
+  final _valorCtrl = TextEditingController();
   final _textoCtrl = TextEditingController();
 
   String _loja = "Shopee";
   final _emojis = {"Shopee": "🛍️", "Mercado Livre": "📦"};
 
   List<String> _templates = [
-    "🔥 OFERTA IMPERDÍVEL!\n\n{loja} {emoji}\n\n👉 {link}\n\nCorre que é por tempo limitado! ⏰",
-    "😱 Achei esse produto incrível!\n\n💰 Melhor preço {emoji}\n\n{link}",
-    "⚡ PROMOÇÃO RELÂMPAGO ⚡\n\n{link}\n\nAproveite antes que acabe!",
+    "🔥 OFERTA IMPERDÍVEL!\n\n{loja} {emoji}\n\n💵 Por apenas {valor}\n\n👉 {link}\n\nCorre que é por tempo limitado! ⏰",
+    "😱 Achei esse produto incrível!\n\n💰 Melhor preço: {valor} {emoji}\n\n{link}",
+    "⚡ PROMOÇÃO RELÂMPAGO ⚡\n\n💵 {valor}\n\n{link}\n\nAproveite antes que acabe!",
   ];
 
   int _templateSelecionado = 0;
@@ -67,6 +67,9 @@ class _TelaInicialState extends State<TelaInicial> {
     return template
         .replaceAll("{loja}", _loja)
         .replaceAll("{emoji}", _emojis[_loja] ?? "")
+        .replaceAll("{valor}", _valorCtrl.text.trim().isEmpty
+            ? "consulte"
+            : "R\$ ${_valorCtrl.text.trim()}")
         .replaceAll("{link}", _linkCtrl.text.trim());
   }
 
@@ -76,19 +79,19 @@ class _TelaInicialState extends State<TelaInicial> {
     });
   }
 
+  void _limpar() {
+    setState(() {
+      _linkCtrl.clear();
+      _valorCtrl.clear();
+      _textoCtrl.clear();
+    });
+  }
+
   void _copiar() {
     Clipboard.setData(ClipboardData(text: _textoCtrl.text));
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("Texto copiado! ✅")),
     );
-  }
-
-  Future<void> _compartilharWhatsApp() async {
-    final texto = Uri.encodeComponent(_textoCtrl.text);
-    final url = Uri.parse("https://wa.me/?text=$texto");
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
-    }
   }
 
   @override
@@ -124,6 +127,16 @@ class _TelaInicialState extends State<TelaInicial> {
               controller: _linkCtrl,
               decoration: const InputDecoration(
                 labelText: "Link do produto",
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _valorCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: "Valor do produto (ex: 99,90)",
+                prefixText: "R\$ ",
                 border: OutlineInputBorder(),
               ),
             ),
@@ -174,9 +187,9 @@ class _TelaInicialState extends State<TelaInicial> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: FilledButton.icon(
-                    onPressed: _compartilharWhatsApp,
-                    icon: const Icon(Icons.share),
-                    label: const Text("WhatsApp"),
+                    onPressed: _limpar,
+                    icon: const Icon(Icons.cleaning_services),
+                    label: const Text("Limpar"),
                   ),
                 ),
               ],
