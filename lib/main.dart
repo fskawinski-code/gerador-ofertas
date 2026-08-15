@@ -1,20 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:receive_sharing_intent/receive_sharing_intent.dart';
-import 'dart:async';
 
 void main() => runApp(const MeuApp());
 
 class MeuApp extends StatelessWidget {
   const MeuApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Gerador de Ofertas',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorSchemeSeed: Colors.deepOrange,
+        colorSchemeSeed: Colors.deepPurple,
         useMaterial3: true,
       ),
       home: const TelaInicial(),
@@ -24,251 +23,174 @@ class MeuApp extends StatelessWidget {
 
 class TelaInicial extends StatefulWidget {
   const TelaInicial({super.key});
+
   @override
   State<TelaInicial> createState() => _TelaInicialState();
 }
 
 class _TelaInicialState extends State<TelaInicial> {
+  static const _shareChannel = MethodChannel('app.share/link');
+
   final _linkCtrl = TextEditingController();
   final _valorCtrl = TextEditingController();
-  final _descontoCtrl = TextEditingController();
-  final _descricaoCtrl = TextEditingController();
-  final _textoCtrl = TextEditingController();
+  final _tituloCtrl = TextEditingController();
 
-  StreamSubscription? _intentSub;
-
-  String _loja = "Shopee";
-  final _emojis = {"Shopee": "🛍️", "Mercado Livre": "📦"};
-
-  final List<String> _templates = [
-    "🔥 OFERTA IMPERDÍVEL!\n\n{descricao}\n\n{loja} {emoji}\n\n💵 Por apenas {valor}  {desconto}\n\n👉 {link}\n\nCorre que é por tempo limitado! ⏰",
-    "😱 {descricao}\n\n💰 {valor} {desconto} {emoji}\n\n{link}",
-    "⚡ PROMOÇÃO RELÂMPAGO ⚡\n\n{descricao}\n💵 {valor} {desconto}\n\n{link}",
-  ];
-
-  int _templateSelecionado = 0;
+  String _resultado = '';
 
   @override
   void initState() {
     super.initState();
-    _carregar();
     _iniciarShareIntent();
-  }
-
-  void _iniciarShareIntent() {
-    // App já aberto recebendo compartilhamento
-    _intentSub = ReceiveSharingIntent.instance.getMediaStream().listen(
-      (files) => _tratarCompartilhamento(files),
-      onError: (_) {},
-    );
-
-    // App aberto pelo compartilhamento (estava fechado)
-    ReceiveSharingIntent.instance.getInitialMedia().then((files) {
-      _tratarCompartilhamento(files);
-      ReceiveSharingIntent.instance.reset();
-    });
-  }
-
-  void _tratarCompartilhamento(List<SharedMediaFile> files) {
-    if (files.isEmpty) return;
-    final url = _extrairLink(files.first.path);
-    if (url.isNotEmpty) {
-      setState(() => _linkCtrl.text = url);
-      _msg("Link recebido! Agora preencha o valor 💰");
-    }
-  }
-
-  String _extrairLink(String texto) {
-    final regex = RegExp(r'https?:\/\/[^\s]+');
-    final match = regex.firstMatch(texto);
-    return match?.group(0) ?? texto.trim();
   }
 
   @override
   void dispose() {
-    _intentSub?.cancel();
     _linkCtrl.dispose();
     _valorCtrl.dispose();
-    _descontoCtrl.dispose();
-    _descricaoCtrl.dispose();
-    _textoCtrl.dispose();
+    _tituloCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _carregar() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _loja = prefs.getString('loja') ?? "Shopee";
-      _templateSelecionado = prefs.getInt('template') ?? 0;
-    });
+  // ===== Recebe link compartilhado (nativo, sem plugin) =====
+  void _iniciarShareIntent() {
+    _buscarLinkCompartilhado();
   }
 
-  Future<void> _salvar() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('loja', _loja);
-    await prefs.setInt('template', _templateSelecionado);
+  Future<void> _buscarLinkCompartilhado() async {
+    try {
+      final texto = await _shareChannel.invokeMethod<String>('getSharedLink');
+      if (texto != null && texto.isNotEmpty) {
+        setState(() => _linkCtrl.text = _extrairLink(texto));
+        _msg("Link recebido! Agora preencha o valor 💰");
+      }
+    } catch (_) {}
+  }
+
+  // Extrai a primeira URL de um texto qualquer
+  String _extrairLink(String texto) {
+    final match = RegExp(r'https?:\/\/[^\s]+').firstMatch(texto);
+    return match?.group(0) ?? texto.trim();
   }
 
   void _msg(String texto) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(texto)),
     );
   }
 
-  String _gerarTexto() {
+  // ===== Gera a oferta =====
+  void _gerarOferta() {
+    final link = _linkCtrl.text.trim();
     final valor = _valorCtrl.text.trim();
-    final desconto = _descontoCtrl.text.trim();
-    return _templates[_templateSelecionado]
-        .replaceAll("{loja}", _loja)
-        .replaceAll("{emoji}", _emojis[_loja] ?? "")
-        .replaceAll("{descricao}", _descricaoCtrl.text.trim())
-        .replaceAll("{valor}", valor.isEmpty ? "consulte" : "R\$ $valor")
-        .replaceAll("{desconto}", desconto.isEmpty ? "" : "($desconto OFF)")
-        .replaceAll("{link}", _linkCtrl.text.trim());
+    final titulo = _tituloCtrl.text.trim();
+
+    if (link.isEmpty || valor.isEmpty) {
+      _msg('Preencha o link e o valor!');
+      return;
+    }
+
+    final texto = StringBuffer();
+    if (titulo.isNotEmpty) texto.writeln('🔥 $titulo');
+    texto.writeln('💰 Por apenas R\$ $valor');
+    texto.writeln('🛒 $link');
+
+    setState(() => _resultado = texto.toString());
   }
 
-  void _gerar() {
-    setState(() => _textoCtrl.text = _gerarTexto());
+  void _copiar() {
+    if (_resultado.isEmpty) return;
+    Clipboard.setData(ClipboardData(text: _resultado));
+    _msg('Oferta copiada! 📋');
   }
 
   void _limpar() {
     setState(() {
       _linkCtrl.clear();
       _valorCtrl.clear();
-      _descontoCtrl.clear();
-      _descricaoCtrl.clear();
-      _textoCtrl.clear();
+      _tituloCtrl.clear();
+      _resultado = '';
     });
-  }
-
-  void _copiar() {
-    Clipboard.setData(ClipboardData(text: _textoCtrl.text));
-    _msg("Texto copiado! ✅");
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Gerador de Ofertas")),
+      appBar: AppBar(
+        title: const Text('Gerador de Ofertas'),
+        centerTitle: true,
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            DropdownButtonFormField<String>(
-              value: _loja,
-              decoration: const InputDecoration(
-                labelText: "Loja",
-                border: OutlineInputBorder(),
-              ),
-              items: _emojis.keys
-                  .map((l) => DropdownMenuItem(
-                        value: l,
-                        child: Text("${_emojis[l]} $l"),
-                      ))
-                  .toList(),
-              onChanged: (v) {
-                setState(() => _loja = v!);
-                _salvar();
-              },
-            ),
-            const SizedBox(height: 16),
             TextField(
-              controller: _descricaoCtrl,
+              controller: _tituloCtrl,
               decoration: const InputDecoration(
-                labelText: "Descrição",
+                labelText: 'Título do produto (opcional)',
                 border: OutlineInputBorder(),
               ),
             ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _valorCtrl,
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(
-                      labelText: "Valor",
-                      prefixText: "R\$ ",
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: TextField(
-                    controller: _descontoCtrl,
-                    decoration: const InputDecoration(
-                      labelText: "Desconto",
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-              ],
+            const SizedBox(height: 12),
+            TextField(
+              controller: _valorCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Valor (R\$)',
+                border: OutlineInputBorder(),
+              ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             TextField(
               controller: _linkCtrl,
               decoration: const InputDecoration(
-                labelText: "Link (recebido ao compartilhar)",
+                labelText: 'Link do produto',
                 border: OutlineInputBorder(),
               ),
             ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<int>(
-              value: _templateSelecionado,
-              decoration: const InputDecoration(
-                labelText: "Modelo de texto",
-                border: OutlineInputBorder(),
-              ),
-              items: List.generate(
-                _templates.length,
-                (i) => DropdownMenuItem(
-                  value: i,
-                  child: Text("Modelo ${i + 1}"),
-                ),
-              ),
-              onChanged: (v) {
-                setState(() => _templateSelecionado = v!);
-                _salvar();
-              },
-            ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             FilledButton.icon(
-              onPressed: _gerar,
+              onPressed: _gerarOferta,
               icon: const Icon(Icons.auto_awesome),
-              label: const Text("Gerar Oferta"),
+              label: const Text('Gerar Oferta'),
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _textoCtrl,
-              maxLines: 8,
-              decoration: const InputDecoration(
-                labelText: "Texto gerado",
-                border: OutlineInputBorder(),
+            const SizedBox(height: 20),
+            if (_resultado.isNotEmpty) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.deepPurple.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.deepPurple.shade200),
+                ),
+                child: SelectableText(
+                  _resultado,
+                  style: const TextStyle(fontSize: 16),
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _copiar,
-                    icon: const Icon(Icons.copy),
-                    label: const Text("Copiar"),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _copiar,
+                      icon: const Icon(Icons.copy),
+                      label: const Text('Copiar'),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: _limpar,
-                    icon: const Icon(Icons.cleaning_services),
-                    label: const Text("Limpar"),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _limpar,
+                      icon: const Icon(Icons.clear),
+                      label: const Text('Limpar'),
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
